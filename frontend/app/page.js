@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, lazy, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import { getProfile } from "./api/profile_api"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,8 +10,16 @@ import { Progress } from "@/components/ui/progress"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Mail, Download, ChevronRight, MoreVertical, Pencil,
-  Plus, Award, GraduationCap, Sparkles, MapPin
+  Plus, Award, GraduationCap, Sparkles, MapPin, Loader2
 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import SignInDialog from "@/components/SignInDialog"
+
+// Lazy load form components
+const IdentityForm = lazy(() => import("./profile_form/components/IdentityForm"))
+const EducationForm = lazy(() => import("./profile_form/components/EducationForm"))
+const SkillsForm = lazy(() => import("./profile_form/components/SkillsForm"))
+const CertificatesForm = lazy(() => import("./profile_form/components/CertificatesForm"))
 
 const formatMonth = (val) => {
   if (!val) return ""
@@ -28,19 +36,31 @@ const formatDate = (val) => {
 }
 
 export default function ProfilePage() {
-  const router  = useRouter()
+  const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
+  const [error, setError] = useState(null)
+  const [activeModal, setActiveModal] = useState(null) // 'identity', 'education', 'skills', 'certificates'
+  const [showSignInAPI, setShowSignInAPI] = useState(false)
 
-  useEffect(() => {
+  const fetchProfile = () => {
+    setLoading(true)
     getProfile()
       .then((res) => { if (res.success) setProfile(res.data); else setError(res.error) })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    fetchProfile()
   }, [])
 
-  if (loading) {
+  const handleSuccess = () => {
+    setActiveModal(null)
+    fetchProfile() // Refresh data
+  }
+
+  if (loading && !profile) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -56,16 +76,17 @@ export default function ProfilePage() {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center space-y-3">
           <p className="text-gray-500 text-sm">{error || "Profile not found"}</p>
-          <Button size="sm" onClick={() => router.push("/profile_form")}>Complete Your Profile</Button>
+          <Button size="sm" onClick={() => setShowSignInAPI(true)}>Complete Your Profile</Button>
+          <SignInDialog open={showSignInAPI} onOpenChange={setShowSignInAPI} />
         </div>
       </div>
     )
   }
 
-  const fullName     = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "No Name"
-  const initials     = [profile.first_name?.[0], profile.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"
-  const education    = Array.isArray(profile.education) && profile.education.length > 0 ? profile.education[0] : null
-  
+  const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "No Name"
+  const initials = [profile.first_name?.[0], profile.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"
+  const education = Array.isArray(profile.education) && profile.education.length > 0 ? profile.education[0] : null
+
   let skills = []
   if (Array.isArray(profile.skills)) {
     skills = profile.skills
@@ -76,7 +97,7 @@ export default function ProfilePage() {
       skills = []
     }
   }
-  
+
   const certificates = Array.isArray(profile.certificates) ? profile.certificates : []
 
   const completionFields = [
@@ -96,11 +117,21 @@ export default function ProfilePage() {
     </button>
   )
 
+  const ModalContent = () => {
+    switch (activeModal) {
+      case 'identity': return <IdentityForm initialData={profile} onSuccess={handleSuccess} />
+      case 'education': return <EducationForm initialData={profile} onSuccess={handleSuccess} />
+      case 'skills': return <SkillsForm initialData={profile} onSuccess={handleSuccess} />
+      case 'certificates': return <CertificatesForm initialData={profile} onSuccess={handleSuccess} />
+      default: return null
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 py-6 px-4 pb-24">
       <div className="max-w-3xl mx-auto space-y-4">
         <Card className="shadow-sm border-0 overflow-hidden">
-          <CardContent className="px-6 py-2.5"> 
+          <CardContent className="px-6 py-2.5">
             <div className="flex items-start justify-between gap-4 mb-1.5">
               <div className="flex items-start gap-3">
                 <Avatar className="w-14 h-14 border-2 border-white shadow-md ring-1 ring-gray-100 shrink-0">
@@ -132,8 +163,8 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <button 
-                onClick={() => router.push("/profile_form")}
+              <button
+                onClick={() => setActiveModal('identity')}
                 className="text-gray-400 hover:text-gray-600 transition shrink-0">
                 <MoreVertical className="w-5 h-5" />
               </button>
@@ -198,7 +229,7 @@ export default function ProfilePage() {
             <Button
               size="sm"
               className="bg-gray-900 hover:bg-gray-800 text-white text-xs gap-1.5 shrink-0"
-              onClick={() => router.push("/profile_form")}
+              onClick={() => setActiveModal('identity')}
             >
               <Sparkles className="w-3.5 h-3.5" />
               {profile.bio ? "Edit career goals" : "Add career goals"}
@@ -228,7 +259,7 @@ export default function ProfilePage() {
                 </div>
                 {!profile.bio && (
                   <button
-                    onClick={() => router.push("/profile_form")}
+                    onClick={() => setActiveModal('identity')}
                     className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-xl transition"
                   >
                     <div className="flex items-center gap-2.5">
@@ -252,7 +283,7 @@ export default function ProfilePage() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900">Skills</h3>
-                  <IconBtn onClick={() => router.push("/profile_form")} />
+                  <IconBtn onClick={() => setActiveModal('skills')} />
                 </div>
                 {skills.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
@@ -264,7 +295,7 @@ export default function ProfilePage() {
                     ))}
                   </div>
                 ) : (
-                  <button onClick={() => router.push("/profile_form")} className="text-xs text-blue-500 hover:text-blue-600">
+                  <button onClick={() => setActiveModal('skills')} className="text-xs text-blue-500 hover:text-blue-600">
                     + Add skills
                   </button>
                 )}
@@ -277,17 +308,17 @@ export default function ProfilePage() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900">Experience</h3>
-                  <IconBtn onClick={() => router.push("/profile_form")} />
+                  <IconBtn onClick={() => setActiveModal('identity')} />
                 </div>
                 <p className="text-xs text-gray-400">No experience added yet.</p>
               </CardContent>
             </Card>
 
-<Card className="shadow-sm border-0">
+            <Card className="shadow-sm border-0">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900">Education</h3>
-                  <IconBtn onClick={() => router.push("/profile_form")} />
+                  <IconBtn onClick={() => setActiveModal('education')} />
                 </div>
                 {education ? (
                   <div className="flex gap-3">
@@ -299,7 +330,7 @@ export default function ProfilePage() {
                         <p className="text-xs font-semibold text-gray-900 leading-snug">
                           {education.course || education.degree}
                         </p>
-                        <button onClick={() => router.push("/profile_form")} className="text-gray-300 hover:text-gray-500 ml-1 shrink-0">
+                        <button onClick={() => setActiveModal('education')} className="text-gray-300 hover:text-gray-500 ml-1 shrink-0">
                           <MoreVertical className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -314,7 +345,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => router.push("/profile_form")} className="text-xs text-blue-500 hover:text-blue-600">
+                  <button onClick={() => setActiveModal('education')} className="text-xs text-blue-500 hover:text-blue-600">
                     + Add education
                   </button>
                 )}
@@ -325,7 +356,7 @@ export default function ProfilePage() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900">Certification</h3>
-                  <IconBtn onClick={() => router.push("/profile_form")} />
+                  <IconBtn onClick={() => setActiveModal('certificates')} />
                 </div>
                 {certificates.length > 0 ? (
                   <div className="space-y-4">
@@ -337,7 +368,7 @@ export default function ProfilePage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between">
                             <p className="text-xs font-semibold text-gray-900 leading-snug">{cert.certificate_name}</p>
-                            <button onClick={() => router.push("/profile_form")} className="text-gray-300 hover:text-gray-500 ml-1 shrink-0">
+                            <button onClick={() => setActiveModal('certificates')} className="text-gray-300 hover:text-gray-500 ml-1 shrink-0">
                               <MoreVertical className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -352,7 +383,7 @@ export default function ProfilePage() {
                     ))}
                   </div>
                 ) : (
-                  <button onClick={() => router.push("/profile_form")} className="text-xs text-blue-500 hover:text-blue-600">
+                  <button onClick={() => setActiveModal('certificates')} className="text-xs text-blue-500 hover:text-blue-600">
                     + Add certificate
                   </button>
                 )}
@@ -365,13 +396,29 @@ export default function ProfilePage() {
 
       <div className="fixed bottom-6 left-6 z-50">
         <Button
-          onClick={() => router.push("/profile_form")}
+          onClick={() => setActiveModal('identity')}
           className="bg-gray-900 hover:bg-gray-800 text-white shadow-lg gap-2 px-5 h-10 text-sm rounded-full"
         >
           <Pencil className="w-4 h-4" />
           Update Your Profile
         </Button>
       </div>
+
+      <Dialog open={!!activeModal} onOpenChange={(open) => !open && setActiveModal(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {activeModal === 'identity' && "Edit Identity"}
+              {activeModal === 'education' && "Edit Education"}
+              {activeModal === 'skills' && "Edit Skills"}
+              {activeModal === 'certificates' && "Edit Certificates"}
+            </DialogTitle>
+          </DialogHeader>
+          <Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>}>
+            <ModalContent />
+          </Suspense>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )
